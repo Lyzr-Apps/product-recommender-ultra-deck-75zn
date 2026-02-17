@@ -151,41 +151,91 @@ function parseAgentResponse(result: AIAgentResponse): { text: string; products: 
   let products: Product[] = []
   let comparison: Comparison | null = null
 
-  if (!result.success || !result.response) {
-    return { text: 'Sorry, I encountered an error. Please try again.', products, comparison }
-  }
-
-  const raw = result.response.result
-  let parsed: any = null
-
-  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    parsed = raw
-  } else if (typeof raw === 'string') {
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
-      parsed = null
+  try {
+    if (!result || !result.success || !result.response) {
+      return { text: result?.error || 'Sorry, I encountered an error. Please try again.', products, comparison }
     }
-  }
 
-  if (parsed && typeof parsed === 'object') {
-    text = typeof parsed.response === 'string' ? parsed.response : ''
-    products = Array.isArray(parsed.products)
-      ? parsed.products.filter((p: any) => p && typeof p.name === 'string')
-      : []
-    comparison =
-      parsed.comparison &&
-      typeof parsed.comparison === 'object' &&
-      !Array.isArray(parsed.comparison) &&
-      Array.isArray(parsed.comparison?.attributes)
-        ? parsed.comparison
-        : null
-  }
+    const response = result.response
+    let raw = response.result
+    let parsed: any = null
 
-  if (!text) {
-    text = result.response.message || ''
-    if (!text && typeof raw === 'string') text = raw
-    if (!text) text = "I received your message but couldn't format a response. Please try again."
+    // If raw is already an object, use it directly
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      parsed = raw
+    } else if (typeof raw === 'string') {
+      // Try to parse JSON string
+      try {
+        parsed = JSON.parse(raw)
+      } catch {
+        // It's just plain text
+        text = raw
+      }
+    }
+
+    // Extract structured data from parsed object
+    if (parsed && typeof parsed === 'object') {
+      // Try to get text response from various possible keys
+      text = typeof parsed.response === 'string' ? parsed.response : ''
+      if (!text) text = typeof parsed.text === 'string' ? parsed.text : ''
+      if (!text) text = typeof parsed.message === 'string' ? parsed.message : ''
+      if (!text) text = typeof parsed.answer === 'string' ? parsed.answer : ''
+      if (!text) text = typeof parsed.content === 'string' ? parsed.content : ''
+
+      products = Array.isArray(parsed.products)
+        ? parsed.products.filter((p: any) => p && typeof p.name === 'string')
+        : []
+      comparison =
+        parsed.comparison &&
+        typeof parsed.comparison === 'object' &&
+        !Array.isArray(parsed.comparison) &&
+        Array.isArray(parsed.comparison?.attributes)
+          ? parsed.comparison
+          : null
+    }
+
+    // Fallback: try response.message
+    if (!text) {
+      text = response.message || ''
+    }
+
+    // Fallback: try to get text from raw_response
+    if (!text && result.raw_response) {
+      try {
+        const rawParsed = JSON.parse(result.raw_response)
+        if (typeof rawParsed === 'string') {
+          text = rawParsed
+        } else if (rawParsed?.response && typeof rawParsed.response === 'string') {
+          text = rawParsed.response
+        } else if (rawParsed?.response?.result) {
+          const innerResult = rawParsed.response.result
+          if (typeof innerResult === 'string') {
+            text = innerResult
+          } else if (typeof innerResult === 'object') {
+            text = innerResult.response || innerResult.text || innerResult.message || ''
+            if (!products.length && Array.isArray(innerResult.products)) {
+              products = innerResult.products.filter((p: any) => p && typeof p.name === 'string')
+            }
+            if (!comparison && innerResult.comparison && typeof innerResult.comparison === 'object' && Array.isArray(innerResult.comparison?.attributes)) {
+              comparison = innerResult.comparison
+            }
+          }
+        }
+      } catch {
+        // raw_response is not JSON
+        if (typeof result.raw_response === 'string' && result.raw_response.length > 0) {
+          text = result.raw_response
+        }
+      }
+    }
+
+    // Final fallback
+    if (!text) {
+      text = "I received your message but couldn't format a response. Please try again."
+    }
+  } catch (err) {
+    console.error('parseAgentResponse error:', err)
+    text = "Sorry, I encountered an error processing the response. Please try again."
   }
 
   return { text, products, comparison }
@@ -514,6 +564,10 @@ export default function Page() {
 
   // Agent activity monitoring
   const agentActivity = useLyzrAgentEvents(activeConversation?.sessionId ?? null)
+  const agentActivityRef = useRef(agentActivity)
+  useEffect(() => {
+    agentActivityRef.current = agentActivity
+  }, [agentActivity])
 
   // ── Effects ──────────────────────────────────────────────────────────────
 
@@ -612,9 +666,9 @@ export default function Page() {
     setConversations((prev) => [newConv, ...prev])
     setActiveConversationId(newConv.id)
     setInputValue('')
-    agentActivity.reset()
+    try { agentActivityRef.current.reset() } catch {}
     if (!isDesktop) setSidebarOpen(false)
-  }, [isDesktop, agentActivity])
+  }, [isDesktop])
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -662,10 +716,12 @@ export default function Page() {
       )
       setInputValue('')
       setIsLoading(true)
-      agentActivity.setProcessing(true)
+      try { agentActivityRef.current.setProcessing(true) } catch {}
 
       try {
+        console.log('[ProductPal] Calling agent with:', { message: trimmed, agent_id: AGENT_ID, session_id: sessionId })
         const result = await callAIAgent(trimmed, AGENT_ID, { session_id: sessionId })
+        console.log('[ProductPal] Agent response:', JSON.stringify(result).substring(0, 500))
         const { text: agentText, products, comparison } = parseAgentResponse(result)
 
         const assistantMsg: Message = {
@@ -687,7 +743,8 @@ export default function Page() {
             }
           })
         )
-      } catch {
+      } catch (err) {
+        console.error('[ProductPal] Agent call error:', err)
         const errorMsg: Message = {
           id: generateId(),
           role: 'assistant',
@@ -707,10 +764,10 @@ export default function Page() {
         )
       } finally {
         setIsLoading(false)
-        agentActivity.setProcessing(false)
+        try { agentActivityRef.current.setProcessing(false) } catch {}
       }
     },
-    [activeConversationId, activeConversation?.sessionId, isLoading, agentActivity]
+    [activeConversationId, activeConversation?.sessionId, isLoading]
   )
 
   const retryLastMessage = useCallback(() => {
@@ -797,7 +854,7 @@ export default function Page() {
                   key={conv.id}
                   onClick={() => {
                     setActiveConversationId(conv.id)
-                    agentActivity.reset()
+                    try { agentActivityRef.current.reset() } catch {}
                     if (!isDesktop) setSidebarOpen(false)
                   }}
                   className={cn(
