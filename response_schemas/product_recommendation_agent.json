@@ -1,0 +1,14 @@
+{
+  "agent_name": "Product Recommendation Agent",
+  "agent_id": "6994bceb277b422741401d41",
+  "agent_type": "json",
+  "accessor": "json",
+  "has_module_outputs": false,
+  "has_knowledge_base": true,
+  "rag_id": "6994bcd17049059138dd20e5",
+  "schema": {
+    "response": "string - The agent's conversational response",
+    "products": "array - Array of product objects with name, description, features[], price, rationale",
+    "comparison": "object|null - Comparison table with attributes[] and products[{name, values[]}]"
+  }
+}

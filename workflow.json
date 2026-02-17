@@ -1,0 +1,18 @@
+{
+  "nodes": [
+    {"id": "input_node", "type": "Input", "label": "User Query", "nodeCategory": "input"},
+    {"id": "recommendation_agent", "type": "Agent", "label": "Product Recommendation Agent", "nodeCategory": "agent"},
+    {"id": "output_node", "type": "Output", "label": "Recommendations", "nodeCategory": "end"}
+  ],
+  "edges": [
+    {"source": "input_node", "target": "recommendation_agent"},
+    {"source": "recommendation_agent", "target": "output_node"}
+  ],
+  "agents": [
+    {
+      "name": "Product Recommendation Agent",
+      "agent_id": "6994bceb277b422741401d41",
+      "type": "single"
+    }
+  ]
+}

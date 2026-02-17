@@ -1,0 +1,14 @@
+{
+  "agents": {
+    "product_recommendation_agent": {
+      "agent_id": "6994bceb277b422741401d41",
+      "name": "Product Recommendation Agent",
+      "type": "single",
+      "has_knowledge_base": true,
+      "rag_id": "6994bcd17049059138dd20e5"
+    }
+  },
+  "rag_ids": {
+    "product_catalog_kb": "6994bcd17049059138dd20e5"
+  }
+}
